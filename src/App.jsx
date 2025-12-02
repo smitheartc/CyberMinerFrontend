@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 // --- Data Definitions ---
 const searchOptions = [
@@ -12,6 +12,30 @@ const sortMethodOptions = [
   { id: 'hits', label: 'Number of Visits' },
   { id: 'alphabetical', label: 'Alphabetical' },
 ];
+
+// USER'S PROVIDED SUGGESTION DATA STRUCTURE
+const suggestionsMap = {
+  'Glob': 'Global Search Engine',
+  'Free': 'Free Encyclopedia Main Page',
+  'Tren': 'Trending Videos Page',
+  'Amaz': 'Amazon Bestseller List',
+  'Trens': 'Trending Software Repositories',
+  'NASA': 'NASA Official Newsroom',
+  'New ': 'New York Times World News Section',
+  'Deve': 'Developer Q&A Forum',
+  'Redd': 'Reddit All Communities Feed',
+  'Etsy': 'Etsy Home & Living Category',
+  'UN N': 'UN News for the Americas Region',
+  'Khan': 'Khan Academy Math Courses',
+  'Spot': 'Spotify Premium Subscription Page',
+  'Cour': 'Coursera Online Course Catalog',
+  'Ado': 'Adobe Creative Cloud Homepage',
+  'RFC ': 'RFC 793 Transmission Control Protocol',
+  'WHO ': 'WHO Health Emergency Situations',
+  'BBC ': 'BBC Sport Football Section',
+  'Nati': 'National Weather Service Alerts',
+  'Pint': 'Pinterest Today\'s Trends'
+};
 
 // --- Icon Components ---
 
@@ -34,8 +58,9 @@ const App = () => {
   // Search state
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedOperatorId, setSelectedOperatorId] = useState('AND');
-  // Filtered Symbols state
   const [filteredSymbols, setFilteredSymbols] = useState('');
+  // Autocomplete suggestion state
+  const [suggestion, setSuggestion] = useState('');
   
   // Menu/Dropdown state
   const [showSettings, setShowSettings] = useState(false);
@@ -54,7 +79,37 @@ const App = () => {
 
   const selectedOperator = searchOptions.find(opt => opt.id === selectedOperatorId);
 
-  // Handlers for settings (remain the same)
+  // --- Utility Functions ---
+
+  // CORRECTED Mock function to simulate fetching a suggestion using the map
+  const getSuggestion = (term) => {
+    if (term.length < 2) return '';
+    
+    // Check if the input term starts with any of the map's keys
+    for (const key in suggestionsMap) {
+      if (key.toLowerCase().startsWith(term.toLowerCase())) {
+        // Return the full descriptive value as the suggestion
+        return suggestionsMap[key];
+      }
+    }
+    return '';
+  };
+  
+  // Update suggestion whenever the search term changes
+  useEffect(() => {
+    const newSuggestion = getSuggestion(searchTerm);
+    
+    // Only set a suggestion if the new suggestion starts with the current term (ensuring context)
+    if (newSuggestion && newSuggestion.toLowerCase().startsWith(searchTerm.toLowerCase())) {
+        setSuggestion(newSuggestion);
+    } else {
+        setSuggestion('');
+    }
+  }, [searchTerm]);
+
+
+  // --- Event Handlers ---
+
   const handleOperatorChange = (e) => {
     setSelectedOperatorId(e.target.value);
   };
@@ -71,7 +126,7 @@ const App = () => {
   const handleClickUrl = async (url) => {
     let finalUrl = url;
 
-    // If the URL does not start with a protocol (http/https), we prepend one.
+    // Check for protocol and prepend HTTPS if missing to ensure external redirection
     if (finalUrl && !finalUrl.startsWith('http://') && !finalUrl.startsWith('https://')) {
         finalUrl = `https://${finalUrl}`;
         console.log(`URL corrected to absolute path for redirection: ${finalUrl}`);
@@ -147,12 +202,11 @@ const App = () => {
     
     setIsLoading(true); // Start loading
 
-    // 1. FRONTEND FILTERING LOGIC
+    // FRONTEND FILTERING LOGIC
     let finalSearchTerm = searchTerm;
 
     if (filteredSymbols.trim()) {
         // Escape special regex characters in the filteredSymbols string before creating the RegExp
-        // This ensures characters like $, (, ) are treated as literal characters, not regex commands.
         const escapedSymbols = filteredSymbols.replace(/([.*+?^=!:${}()|\[\]\/\\])/g, '\\$1');
         
         // Create a global regular expression that matches any of the escaped symbols
@@ -177,13 +231,11 @@ const App = () => {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              // Use the cleaned term for the API request
               searchTerm : finalSearchTerm,
               operator : selectedOperator.label,
               numberOfResults : resultsPerPage,
-              pageNumber : pageOverride, // Use the overridden page number
+              pageNumber : pageOverride,
               sortMethod : sortMethod,
-              // filteredSymbols parameter is REMOVED from the payload
             }),
           })
           
@@ -197,21 +249,17 @@ const App = () => {
           if (json) {
             // Update pagination state from the response
             if (json.totalPages !== undefined) setTotalPages(json.totalPages);
-            // Ensure the pageNumber state reflects what the server returned
             if (json.number !== undefined) setPageNumber(json.number); 
             
             // Set the results state from the 'content' array
             if (Array.isArray(json.content) && Array.isArray(json.content[0])) {
                 setSearchResults(json.content);
             } else if (Array.isArray(json.content)) {
+              // Handle conversion from objects to the required [description, url] array format if needed
               const rawContent = json.content;
-
-              // Function to convert objects into the required [circularShift, url] array format
               const transformedContent = rawContent.map(entity => {
-                return [
-                  entity.circularShift, // Get the value of the circularShift property
-                  entity.url           // Get the value of the url property
-                ];
+                // Assuming object has 'circularShift' (description) and 'url' properties
+                return [entity.circularShift || 'No Description', entity.url || '#']; 
               });
               setSearchResults(transformedContent);
             } else {
@@ -221,45 +269,50 @@ const App = () => {
 
     } catch (error) {
         console.error("Error during search:", error);
-        // Optionally display a user-friendly error message
     } finally {
         setIsLoading(false); // End loading
-        // Close settings after search
         setShowSettings(false);
     }
   };
 
   const handleKeyDown = (e) => {
+    // 1. Autocomplete acceptance (Right Arrow or Tab)
+    if ((e.key === 'ArrowRight' || e.key === 'Tab') && suggestion) {
+        e.preventDefault(); // Prevent default tab behavior (losing focus)
+        setSearchTerm(suggestion);
+        setSuggestion('');
+    }
+    
+    // 2. Search execution (Enter)
     if (e.key === 'Enter') {
-      // When searching via enter, always reset to the first page
       setPageNumber(0);
       handleSearch(0);
     }
   };
   
-  // Function to toggle the Settings Panel
+  const handleInputChange = (e) => {
+    setSearchTerm(e.target.value);
+  }
+
   const toggleSettingsPanel = () => {
     setShowSettings(prev => !prev);
   };
 
-  // Logic to determine which page buttons to display
+  // Logic to determine which page buttons to display (omitted for brevity, remains the same)
   const renderPaginationButtons = () => {
     if (totalPages <= 1) return null;
 
     const currentPageOneIndexed = pageNumber + 1;
-    const maxVisiblePages = 7; // Show 7 buttons max (e.g., 1 ... 4 5 6 ... 10)
+    const maxVisiblePages = 7;
     const pages = [];
     
-    // Simple logic: show first, last, and a window around the current page
     let startPage = Math.max(1, currentPageOneIndexed - Math.floor(maxVisiblePages / 2));
     let endPage = Math.min(totalPages, startPage + maxVisiblePages - 1);
 
-    // Adjust start page if we hit the total pages limit
     if (endPage - startPage + 1 < maxVisiblePages) {
         startPage = Math.max(1, endPage - maxVisiblePages + 1);
     }
 
-    // Add "Previous" button
     pages.push(
         <button
             key="prev"
@@ -271,7 +324,6 @@ const App = () => {
         </button>
     );
 
-    // Add page buttons
     for (let i = startPage; i <= endPage; i++) {
         const isCurrent = i === currentPageOneIndexed;
         pages.push(
@@ -289,7 +341,6 @@ const App = () => {
         );
     }
     
-    // Add "Next" button
     pages.push(
         <button
             key="next"
@@ -331,15 +382,42 @@ const App = () => {
           onKeyDown={handleKeyDown}
         >
 
-          {/* 1. Main Input Field */}
-          <input
-            type="text"
-            placeholder={`Enter search terms (Operator: ${selectedOperator.label})`}
-            aria-label="Search input field"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="flex-grow py-3 px-4 text-gray-800 text-base md:text-lg border-none bg-transparent placeholder-gray-500 rounded-l-full focus:outline-none"
-          />
+          {/* 1. Main Input Field Area with Autocomplete Layer */}
+          <div className="relative flex-grow">
+            
+            {/* 1a. The Suggestion Layer (Gray Text) */}
+            {suggestion && (
+                <span
+                    className="absolute inset-0 py-3 px-4 text-gray-400 text-base md:text-lg pointer-events-none"
+                    style={{ 
+                        // Align with input's padding
+                        paddingLeft: '1rem', 
+                        paddingTop: '0.75rem',
+                        // CRITICAL: Preserve leading white space for correct cursor positioning
+                        whiteSpace: 'pre' 
+                    }}
+                >
+                    {/* Render the user's typed input, but transparently */}
+                    <span className="opacity-0">
+                        {searchTerm}
+                    </span>
+                    {/* Render the suggested suffix in light gray */}
+                    <span className="text-gray-400 opacity-70">
+                        {suggestion.substring(searchTerm.length)}
+                    </span>
+                </span>
+            )}
+
+            {/* 1b. Main Input Field (Transparent Foreground) */}
+            <input
+              type="text"
+              placeholder={`Enter search terms (Operator: ${selectedOperator.label})`}
+              aria-label="Search input field"
+              value={searchTerm}
+              onChange={handleInputChange}
+              className="relative z-10 flex-grow py-3 px-4 text-gray-800 text-base md:text-lg border-none bg-transparent placeholder-gray-500 rounded-l-full focus:outline-none w-full"
+            />
+          </div>
 
           {/* 2. Controls Area: Hamburger Settings Button */}
           <div className="flex items-stretch">
@@ -347,7 +425,6 @@ const App = () => {
             {/* Hamburger Settings Button */}
             <button
               onClick={toggleSettingsPanel}
-              // The hamburger button now has the rounded-r-full class to complete the pill shape
               className="h-full px-5 flex items-center justify-center text-gray-700 transition-colors duration-200 border-l-2 border-gray-300 hover:bg-gray-100 active:bg-gray-200 rounded-r-full focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
               aria-label="Toggle search settings menu"
               aria-expanded={showSettings}
@@ -463,10 +540,7 @@ const App = () => {
               return (
                 <div 
                   key={index} 
-                  // Add click handler to the entire card
                   onClick={() => handleClickUrl(url)}
-                  // Styling to indicate the card is clickable
-                  // Added flex classes to position the button to the right
                   className="bg-white p-4 rounded-xl shadow-md border border-gray-100 transition-shadow hover:shadow-lg cursor-pointer flex justify-between items-start"
                   role="link"
                   tabIndex="0"
