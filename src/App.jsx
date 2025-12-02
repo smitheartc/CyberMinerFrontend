@@ -34,6 +34,8 @@ const App = () => {
   // Search state
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedOperatorId, setSelectedOperatorId] = useState('AND');
+  // Filtered Symbols state
+  const [filteredSymbols, setFilteredSymbols] = useState('');
   
   // Menu/Dropdown state
   const [showSettings, setShowSettings] = useState(false);
@@ -95,7 +97,7 @@ const App = () => {
     window.location.href = finalUrl;
   };
 
-  // NEW: Handler for removing a link
+  // Handler for removing a link
   const handleRemoveLink = async (url, index, e) => {
     // CRITICAL: Stop propagation so clicking the delete button doesn't trigger the link redirection
     e.stopPropagation(); 
@@ -145,17 +147,43 @@ const App = () => {
     
     setIsLoading(true); // Start loading
 
+    // 1. FRONTEND FILTERING LOGIC
+    let finalSearchTerm = searchTerm;
+
+    if (filteredSymbols.trim()) {
+        // Escape special regex characters in the filteredSymbols string before creating the RegExp
+        // This ensures characters like $, (, ) are treated as literal characters, not regex commands.
+        const escapedSymbols = filteredSymbols.replace(/([.*+?^=!:${}()|\[\]\/\\])/g, '\\$1');
+        
+        // Create a global regular expression that matches any of the escaped symbols
+        const regex = new RegExp(`[${escapedSymbols}]`, 'g');
+        
+        // Apply the filtering to the search term
+        finalSearchTerm = searchTerm.replace(regex, '');
+        
+        console.log(`Original term: "${searchTerm}", Symbols excluded: "${filteredSymbols}", Final term: "${finalSearchTerm}"`);
+    }
+
+    // Check if the term is empty after filtering
+    if (!finalSearchTerm.trim()) {
+        console.log("Search term is empty after filtering symbols. Aborting search.");
+        setIsLoading(false);
+        return;
+    }
+
     try {
         // Mocking exponential backoff logic here, but using simple fetch call
         const res = await fetch('http://localhost:8080/search', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              searchTerm : searchTerm,
+              // Use the cleaned term for the API request
+              searchTerm : finalSearchTerm,
               operator : selectedOperator.label,
               numberOfResults : resultsPerPage,
               pageNumber : pageOverride, // Use the overridden page number
-              sortMethod : sortMethod
+              sortMethod : sortMethod,
+              // filteredSymbols parameter is REMOVED from the payload
             }),
           })
           
@@ -173,9 +201,9 @@ const App = () => {
             if (json.number !== undefined) setPageNumber(json.number); 
             
             // Set the results state from the 'content' array
-            if (Array.isArray(json.content[0])) {
+            if (Array.isArray(json.content) && Array.isArray(json.content[0])) {
                 setSearchResults(json.content);
-            } else {
+            } else if (Array.isArray(json.content)) {
               const rawContent = json.content;
 
               // Function to convert objects into the required [circularShift, url] array format
@@ -186,6 +214,8 @@ const App = () => {
                 ];
               });
               setSearchResults(transformedContent);
+            } else {
+                setSearchResults([]);
             }
           }
 
@@ -282,6 +312,18 @@ const App = () => {
     <div className="min-h-screen bg-gray-50 flex flex-col items-center p-4">
       
       <div className="w-full max-w-lg md:max-w-xl relative mt-16"> 
+        
+        {/* Filtered Symbols Input - Top Right */}
+        <div className="mb-3 flex justify-end">
+            <input
+                type="text"
+                placeholder="Symbols to exclude (e.g., #, $, @)"
+                aria-label="Filtered symbols to exclude from search query"
+                value={filteredSymbols}
+                onChange={(e) => setFilteredSymbols(e.target.value)}
+                className="w-full sm:w-80 px-4 py-2 text-sm border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 transition duration-150 shadow-sm"
+            />
+        </div>
         
         {/* The Pill-Shaped Search Bar (Search Input + Hamburger) */}
         <div 
