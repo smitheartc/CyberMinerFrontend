@@ -67,7 +67,7 @@ const App = () => {
 
   // Settings state
   const [resultsPerPage, setResultsPerPage] = useState(resultsPerPageOptions[0]);
-  const [sortMethod, setSortMethod] = useState(sortMethodOptions[0].id);
+  const [sortMethod, setSortMethod] = useState(sortMethodOptions[1].id);
   
   // Pagination state (pageNumber is 0-indexed for the API)
   const [pageNumber, setPageNumber] = useState(0); 
